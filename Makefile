@@ -11,8 +11,7 @@ CGO_ENABLED=0
 
 targets = rpd
 
-
-.PHONY: all lint lint-full test image
+.PHONY: all lint test rpd clean
 
 all: test $(targets)
 
@@ -27,7 +26,6 @@ images: rpd-image
 
 rpd:
 	cd cmd/rpd && go build $(LDFLAGS)
-
 
 clean:
 	rm -f cmd/rpd/rpd

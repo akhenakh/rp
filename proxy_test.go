@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/akhenakh/rp/cache"
 	"github.com/go-kit/kit/log"
 	"github.com/stretchr/testify/require"
 )
@@ -74,6 +75,53 @@ func TestProxyHeader(t *testing.T) {
 
 	require.Equal(t, 200, res.StatusCode)
 	require.Equal(t, myTestHeaderValue, res.Header.Get(myTestHeader))
+}
+
+func TestProxyCache(t *testing.T) {
+	// starting 1 backend server
+	callCounter := 0
+	backend1 := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.Write([]byte(b1body))
+		callCounter++
+	}))
+
+	b1URL, err := url.Parse(backend1.URL)
+	require.NoError(t, err)
+
+	opts := &Options{
+		Logger:    log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout)),
+		Cache:     true,
+		CacheSize: 10,
+	}
+
+	ps, err := New([]string{b1URL.Host}, opts)
+	require.NotNil(t, ps)
+	require.NoError(t, err)
+
+	// starting the proxy http server
+	tserv := httptest.NewServer(ps)
+	defer tserv.Close()
+	req, err := http.NewRequest("GET", tserv.URL, nil)
+	require.NoError(t, err)
+
+	// requesting through the proxy
+	res, err := tserv.Client().Do(req)
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	// should trigger one call and no added header
+	require.Equal(t, 200, res.StatusCode)
+	require.Equal(t, 1, callCounter)
+	require.Equal(t, "", res.Header.Get(cache.CachedHeader))
+
+	// requesting a 2nd time through the proxy expect added header and no more callcount
+	res, err = tserv.Client().Do(req)
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	require.Equal(t, 200, res.StatusCode)
+	require.Equal(t, 1, callCounter)
+	require.Equal(t, "true", res.Header.Get(cache.CachedHeader))
 }
 
 func TestPickBackend(t *testing.T) {

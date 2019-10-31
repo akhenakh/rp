@@ -1,15 +1,18 @@
 package rp
 
 import (
+	"bytes"
 	"container/list"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"sync"
 
 	log "github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	lru "github.com/hashicorp/golang-lru"
+
+	"github.com/akhenakh/rp/cache"
 )
 
 // ProxyServer is a simple reverse lb proxy
@@ -18,7 +21,7 @@ type ProxyServer struct {
 	transport http.RoundTripper
 
 	// cache responses
-	cache *lru.ARCCache
+	cache *cache.Cache
 
 	mu sync.Mutex
 	// list of backends addrs
@@ -51,9 +54,8 @@ func New(backends []string, opts *Options) (*ProxyServer, error) {
 	if opts != nil {
 		ps.logger = opts.Logger
 
-		ps.logger = log.With(ps.logger, "components", "ProxyServer")
 		if opts.Cache {
-			cache, err := lru.NewARC(opts.CacheSize)
+			cache, err := cache.New(opts.CacheSize, ps.logger)
 			if err != nil {
 				return nil, err
 			}
@@ -64,6 +66,7 @@ func New(backends []string, opts *Options) (*ProxyServer, error) {
 	if ps.logger == nil {
 		ps.logger = log.NewNopLogger()
 	}
+	ps.logger = log.With(ps.logger, "components", "ProxyServer")
 
 	for _, b := range backends {
 		ps.backends.PushBack(b)
@@ -96,22 +99,35 @@ func (ps *ProxyServer) PickBackend() (string, error) {
 
 func (ps *ProxyServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	//start := time.Now()
-	if ps.cache != nil {
-		// TODO: get from cache
-		return
-	}
 
+	// lookup in the cache
+	if ps.cache != nil {
+		cresp, ok := ps.cache.GetResponse(req)
+		if ok {
+			for k, v := range cresp.Header {
+				rw.Header().Add(k, v[0])
+			}
+			_, err := io.Copy(rw, cresp.Body)
+			if err != nil {
+				http.Error(rw, err.Error(), http.StatusInternalServerError)
+				level.Debug(ps.logger).Log("msg", "error while responding to client from cache", "req", req.URL)
+			}
+			return
+		}
+	}
 	// defer func() {
 	// 	t := time.Now()
 	// 	elapsed := t.Sub(start)
 	// }()
 
+	// pick a backend server
 	backend, err := ps.PickBackend()
 	if err != nil {
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	// modify the request
 	req.Host = backend
 	req.URL.Scheme = "http"
 	if req.URL.Host == "" {
@@ -131,13 +147,31 @@ func (ps *ProxyServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	copyHeader(rw.Header(), resp.Header)
 
-	_, err = io.Copy(rw, resp.Body)
-	if err != nil {
-		http.Error(rw, err.Error(), http.StatusInternalServerError)
-		// not critical
-		level.Debug(ps.logger).Log("msg", "error while responding to client", "req", req.URL, "backend", backend)
-
+	// simply pass the resp.Body if no cache
+	if ps.cache == nil {
+		_, err = io.Copy(rw, resp.Body)
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			level.Error(ps.logger).Log("msg", "error while responding to client", "req", req.URL, "backend", backend)
+			return
+		}
 		return
+	}
+
+	var bodyBytes []byte
+	if resp.Body != nil {
+		bodyBytes, err = ioutil.ReadAll(resp.Body)
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			level.Error(ps.logger).Log("msg", "error while responding to client", "req", req.URL, "backend", backend)
+			return
+		}
+	}
+
+	resp.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
+	// copy into the cache
+	if resp.StatusCode >= http.StatusOK && resp.StatusCode < 300 {
+		ps.cache.PutResponse(resp, bodyBytes)
 	}
 }
 
