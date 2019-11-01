@@ -1,13 +1,14 @@
 package rp
 
 import (
-	"bytes"
 	"container/list"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	log "github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -44,7 +45,17 @@ type Options struct {
 // New returns a ProxyServer that will load balance between backends
 // and cache response in memory
 func New(backends []string, opts *Options) (*ProxyServer, error) {
-	transport := http.DefaultTransport
+	transport := &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   5 * time.Second,
+			KeepAlive: 10 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:   true,
+		MaxIdleConns:        100,
+		IdleConnTimeout:     10 * time.Second,
+		TLSHandshakeTimeout: 5 * time.Second,
+		DisableCompression:  true,
+	}
 
 	ps := &ProxyServer{
 		backends:  list.New(),
@@ -107,7 +118,7 @@ func (ps *ProxyServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			for k, v := range cresp.Header {
 				rw.Header().Add(k, v[0])
 			}
-			_, err := io.Copy(rw, cresp.Body)
+			_, err := rw.Write(cresp.Body)
 			if err != nil {
 				http.Error(rw, err.Error(), http.StatusInternalServerError)
 				level.Debug(ps.logger).Log("msg", "error while responding to client from cache", "req", req.URL)
@@ -161,6 +172,7 @@ func (ps *ProxyServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	var bodyBytes []byte
 	if resp.Body != nil {
 		bodyBytes, err = ioutil.ReadAll(resp.Body)
+		fmt.Println("DEBUG", len(bodyBytes), resp.Request.URL)
 		if err != nil {
 			http.Error(rw, err.Error(), http.StatusInternalServerError)
 			level.Error(ps.logger).Log("msg", "error while responding to client", "req", req.URL, "backend", backend)
@@ -168,11 +180,12 @@ func (ps *ProxyServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	resp.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
 	// copy into the cache
 	if resp.StatusCode >= http.StatusOK && resp.StatusCode < 300 {
 		ps.cache.PutResponse(resp, bodyBytes)
 	}
+
+	rw.Write(bodyBytes)
 }
 
 func copyHeader(dst, src http.Header) {

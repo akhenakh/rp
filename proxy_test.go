@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	b1body            = "b1"
-	b2body            = "b2"
+	b1body            = "b1BODY"
+	b2body            = "b2BODY"
 	myTestHeader      = "X-Added-Header"
 	myTestHeaderValue = "42"
 )
@@ -109,19 +109,29 @@ func TestProxyCache(t *testing.T) {
 	require.NoError(t, err)
 	defer res.Body.Close()
 
+	// reading body
+	body, err := ioutil.ReadAll(res.Body)
+	require.NoError(t, err)
+	require.EqualValues(t, b1body, string(body))
+
 	// should trigger one call and no added header
 	require.Equal(t, 200, res.StatusCode)
 	require.Equal(t, 1, callCounter)
 	require.Equal(t, "", res.Header.Get(cache.CachedHeader))
 
 	// requesting a 2nd time through the proxy expect added header and no more callcount
-	res, err = tserv.Client().Do(req)
+	res2, err := tserv.Client().Do(req)
 	require.NoError(t, err)
-	defer res.Body.Close()
+	defer res2.Body.Close()
+
+	// reading body
+	body, err = ioutil.ReadAll(res2.Body)
+	require.NoError(t, err)
+	require.EqualValues(t, b1body, string(body))
 
 	require.Equal(t, 200, res.StatusCode)
 	require.Equal(t, 1, callCounter)
-	require.Equal(t, "true", res.Header.Get(cache.CachedHeader))
+	require.Equal(t, "true", res2.Header.Get(cache.CachedHeader))
 }
 
 func TestPickBackend(t *testing.T) {

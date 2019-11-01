@@ -1,9 +1,6 @@
 package cache
 
 import (
-	"bytes"
-	"io"
-	"io/ioutil"
 	"net/http"
 
 	log "github.com/go-kit/kit/log"
@@ -22,7 +19,7 @@ type Cache struct {
 // CachedResponse a cached http response
 type CachedResponse struct {
 	Header http.Header
-	Body   io.ReadCloser
+	Body   []byte
 }
 
 // New returns a new Cache
@@ -44,13 +41,15 @@ func New(size int, logger log.Logger) (*Cache, error) {
 
 // GetResponse get a response from the cache using req.URL as key
 func (c *Cache) GetResponse(req *http.Request) (*CachedResponse, bool) {
-	level.Debug(c.logger).Log("msg", "requesting from the cache", "key", req.RequestURI)
-
 	RequestCacheCounter.Inc()
 	v, ok := c.Get(req.RequestURI)
+
 	if ok {
 		HitCacheCounter.Inc()
 		cresp := v.(*CachedResponse)
+		level.Debug(c.logger).Log("msg", "requesting from the cache",
+			"key", req.RequestURI, "found", ok, "size", len(cresp.Body))
+
 		return cresp, true
 	}
 	return nil, false
@@ -59,13 +58,15 @@ func (c *Cache) GetResponse(req *http.Request) (*CachedResponse, bool) {
 // PutResponse adds a response to the cache
 func (c *Cache) PutResponse(resp *http.Response, body []byte) {
 	cr := &CachedResponse{
-		Body:   ioutil.NopCloser(bytes.NewBuffer(body)),
+		Body:   body,
 		Header: make(http.Header),
 	}
 	copyHeader(cr.Header, resp.Header)
 	cr.Header.Add(CachedHeader, "true")
 	c.Add(resp.Request.RequestURI, cr)
-	level.Debug(c.logger).Log("msg", "putting a response into the cache", "key", resp.Request.RequestURI)
+	level.Debug(c.logger).Log("msg", "putting a response into the cache",
+		"key", resp.Request.RequestURI,
+		"size", len(body))
 }
 
 func copyHeader(dst, src http.Header) {
