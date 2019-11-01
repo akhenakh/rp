@@ -57,8 +57,12 @@ func (c *Cache) GetResponse(req *http.Request) (*CachedResponse, bool) {
 
 // PutResponse adds a response to the cache
 func (c *Cache) PutResponse(resp *http.Response, body []byte) {
+	// copying the body to avoid retaining
+	buffer := make([]byte, len(body))
+	copy(buffer, body)
+
 	cr := &CachedResponse{
-		Body:   body,
+		Body:   buffer,
 		Header: make(http.Header),
 	}
 	copyHeader(cr.Header, resp.Header)
