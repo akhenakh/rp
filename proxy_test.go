@@ -8,9 +8,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/akhenakh/rp/cache"
 	"github.com/go-kit/kit/log"
 	"github.com/stretchr/testify/require"
+
+	"github.com/akhenakh/rp/cache"
 )
 
 const (

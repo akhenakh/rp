@@ -172,7 +172,6 @@ func (ps *ProxyServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	var bodyBytes []byte
 	if resp.Body != nil {
 		bodyBytes, err = ioutil.ReadAll(resp.Body)
-		fmt.Println("DEBUG", len(bodyBytes), resp.Request.URL)
 		if err != nil {
 			http.Error(rw, err.Error(), http.StatusInternalServerError)
 			level.Error(ps.logger).Log("msg", "error while responding to client", "req", req.URL, "backend", backend)

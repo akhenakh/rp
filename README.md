@@ -5,6 +5,8 @@ A toy reverse proxy that does not use `net/httputil`
 
 Do not use anywhere in production.
 
+Backends are HTTP only.
+
 ## Plan
 
 Iterates over simple features
@@ -16,6 +18,10 @@ Iterates over simple features
 
 ## TODO
 
-- cache
 - xforwarded for
 - metrics timing
+- sticky (crc ip)
+- http2
+- websocket
+- backend failure detection and eviction
+- dynamic discovery of the backend list 

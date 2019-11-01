@@ -11,12 +11,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/akhenakh/rp"
 	log "github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/namsral/flag"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/akhenakh/rp"
 )
 
 const appName = "rpd"
