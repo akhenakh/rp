@@ -6,8 +6,8 @@ import (
 )
 
 var (
-	// HitCacheCounter hit cache count metric
-	HitCacheCounter = promauto.NewCounter(
+	// hitCacheCounter hit cache count metric
+	hitCacheCounter = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: "rp",
 			Name:      "cache_hit",
@@ -15,7 +15,7 @@ var (
 		},
 	)
 
-	RequestCacheCounter = promauto.NewCounter(
+	requestCacheCounter = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: "rp",
 			Name:      "cache_req",

@@ -19,7 +19,6 @@ Iterates over simple features
 ## TODO
 
 - xforwarded for
-- metrics timing
 - sticky (crc ip)
 - http2
 - websocket

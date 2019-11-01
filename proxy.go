@@ -12,6 +12,7 @@ import (
 
 	log "github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/akhenakh/rp/cache"
 )
@@ -108,8 +109,14 @@ func (ps *ProxyServer) PickBackend() (string, error) {
 	return ps.pickedBackend.Value.(string), nil
 }
 
+func (ps *ProxyServer) handleError(rw http.ResponseWriter, err error) {
+	errorCounter.Inc()
+	http.Error(rw, err.Error(), http.StatusInternalServerError)
+}
+
 func (ps *ProxyServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	//start := time.Now()
+	timer := prometheus.NewTimer(requestHistogram)
+	defer timer.ObserveDuration()
 
 	// lookup in the cache
 	if ps.cache != nil {
@@ -120,21 +127,17 @@ func (ps *ProxyServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			}
 			_, err := rw.Write(cresp.Body)
 			if err != nil {
-				http.Error(rw, err.Error(), http.StatusInternalServerError)
+				ps.handleError(rw, err)
 				level.Debug(ps.logger).Log("msg", "error while responding to client from cache", "req", req.URL)
 			}
 			return
 		}
 	}
-	// defer func() {
-	// 	t := time.Now()
-	// 	elapsed := t.Sub(start)
-	// }()
 
 	// pick a backend server
 	backend, err := ps.PickBackend()
 	if err != nil {
-		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		ps.handleError(rw, err)
 		return
 	}
 
@@ -149,7 +152,7 @@ func (ps *ProxyServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	resp, err := ps.transport.RoundTrip(req)
 	if err != nil {
-		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		ps.handleError(rw, err)
 		level.Error(ps.logger).Log("msg", "error while querying backend",
 			"req", req.URL, "backend", backend, "error", err)
 		return
@@ -162,7 +165,7 @@ func (ps *ProxyServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	if ps.cache == nil {
 		_, err = io.Copy(rw, resp.Body)
 		if err != nil {
-			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			ps.handleError(rw, err)
 			level.Error(ps.logger).Log("msg", "error while responding to client", "req", req.URL, "backend", backend)
 			return
 		}
@@ -173,7 +176,7 @@ func (ps *ProxyServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	if resp.Body != nil {
 		bodyBytes, err = ioutil.ReadAll(resp.Body)
 		if err != nil {
-			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			ps.handleError(rw, err)
 			level.Error(ps.logger).Log("msg", "error while responding to client", "req", req.URL, "backend", backend)
 			return
 		}

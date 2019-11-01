@@ -41,11 +41,11 @@ func New(size int, logger log.Logger) (*Cache, error) {
 
 // GetResponse get a response from the cache using req.URL as key
 func (c *Cache) GetResponse(req *http.Request) (*CachedResponse, bool) {
-	RequestCacheCounter.Inc()
+	requestCacheCounter.Inc()
 	v, ok := c.Get(req.RequestURI)
 
 	if ok {
-		HitCacheCounter.Inc()
+		hitCacheCounter.Inc()
 		cresp := v.(*CachedResponse)
 		level.Debug(c.logger).Log("msg", "requesting from the cache",
 			"key", req.RequestURI, "found", ok, "size", len(cresp.Body))
